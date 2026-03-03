@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+log/
+log_final/
+*.log
+
+# Checkpoints
+*.pth
+*.pt
+checkpoints/
+pretrained/
+
+# Dataset
+data/
+datasets/
+
+# Results
+results/
+*.png
+*.jpg
+*.tar.gz
+
+# tmux
+.tmux/
+
+# venv
+env/
+sigma/
