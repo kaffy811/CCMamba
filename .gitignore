@@ -29,3 +29,6 @@ results/
 # venv
 env/
 sigma/
+
+build/
+*.so
