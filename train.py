@@ -166,49 +166,76 @@ def main():
                 modal_xs = modal_xs.cuda(non_blocking=True)
 
                 # ========================================================
-                # 步骤 A: 教师模型（Teacher）生成完整图像的软标签 
+                # Adaptive Mask Distillation Strategy
+                # Parameters are read from config to adapt to dataset characteristics:
+                #   - MFNet: aggressive masking (mask_prob=0.5, complementary=True) from epoch 0
+                #   - PST900: gentle masking (mask_prob=0.15, complementary=False) from epoch 200
                 # ========================================================
-                model.eval()
-                with torch.no_grad():
-                    clean_logits = model(imgs, modal_xs)
-                model.train()
+                mask_apply_prob = getattr(config, 'mask_apply_prob', 1.0)
+                distill_start_epoch = getattr(config, 'distill_start_epoch', 0)
 
-                # ========================================================
-                # 步骤 B: 引入互补随机掩码 (CRM)
-                # ========================================================
-                batch_size, _, height, width = imgs.shape
-                patch_size = 32  
-                mask_prob = 0.5  
-                
-                rand_tensor = torch.rand((batch_size, 1, height // patch_size, width // patch_size), device=imgs.device)
-                small_mask = (rand_tensor > mask_prob).float()
-                mask = F.interpolate(small_mask, size=(height, width), mode='nearest')
-                
-                imgs_masked = imgs * mask
-                modal_xs_masked = modal_xs * (1 - mask)
+                use_mask_distill = (
+                    epoch >= distill_start_epoch and
+                    torch.rand(1).item() < mask_apply_prob
+                )
 
-                # ========================================================
-                # 步骤 C: 学生模型（Student）提取掩码图像的预测 (有梯度)
-                # ========================================================
-                masked_logits = model(imgs_masked, modal_xs_masked)
+                if use_mask_distill:
+                    # Step A: Teacher generates soft labels from the complete (unmasked) image
+                    model.eval()
+                    with torch.no_grad():
+                        clean_logits = model(imgs, modal_xs)
+                    model.train()
 
-                # ========================================================
-                # 步骤 D: 计算联合损失 (交叉熵损失 + 自蒸馏损失)
-                # ========================================================
-                loss_ce = criterion(masked_logits, gts.long())
-                
-                T = 2.0  # 蒸馏温度参数
-                prob_clean = F.softmax(clean_logits / T, dim=1)
-                log_prob_masked = F.log_softmax(masked_logits / T, dim=1)
-                
-                valid_mask = (gts != config.background).unsqueeze(1).float()
-                
-                loss_distill_raw = F.kl_div(log_prob_masked, prob_clean, reduction='none') * (T * T)
-                loss_distill = (loss_distill_raw * valid_mask).sum() / (valid_mask.sum() * config.num_classes + 1e-8)
-                
-                alpha = 1.0  
-                loss = loss_ce + alpha * loss_distill
-                # ========================================================
+                    # Step B: Generate block mask using config parameters
+                    mask_prob = getattr(config, 'mask_prob', 0.5)
+                    patch_size = getattr(config, 'mask_patch_size', 32)
+                    mask_complementary = getattr(config, 'mask_complementary', True)
+
+                    batch_size, _, height, width = imgs.shape
+                    rand_tensor = torch.rand(
+                        (batch_size, 1, height // patch_size, width // patch_size),
+                        device=imgs.device
+                    )
+                    small_mask = (rand_tensor > mask_prob).float()
+                    mask = F.interpolate(small_mask, size=(height, width), mode='nearest')
+
+                    imgs_masked = imgs * mask
+                    if mask_complementary:
+                        # Complementary masking: RGB sees mask, thermal sees (1-mask)
+                        # Forces the model to learn cross-modal compensation (effective for MFNet)
+                        modal_xs_masked = modal_xs * (1 - mask)
+                    else:
+                        # Same-location masking: both modalities mask the same region
+                        # Simulates regional occlusion while preserving fusion ability (for PST900)
+                        modal_xs_masked = modal_xs * mask
+
+                    # Step C: Student forward pass on masked inputs
+                    masked_logits = model(imgs_masked, modal_xs_masked)
+
+                    # Step D: Compute combined loss (CE + distillation)
+                    loss_ce = criterion(masked_logits, gts.long())
+
+                    T = getattr(config, 'distill_temperature', 2.0)
+                    prob_clean = F.softmax(clean_logits / T, dim=1)
+                    log_prob_masked = F.log_softmax(masked_logits / T, dim=1)
+                    # Standard KL divergence distillation loss scaled by T^2
+                    loss_distill = F.kl_div(log_prob_masked, prob_clean, reduction='batchmean') * (T * T)
+
+                    # Progressively increase distillation weight from 0 to distill_alpha.
+                    # ramp_epochs covers the period from distill_start_epoch to nepochs.
+                    # The factor of 2 means alpha reaches its full value at the midpoint of the
+                    # ramp period, ensuring the model trains with full distillation strength for
+                    # the second half of the distillation phase.
+                    distill_alpha = getattr(config, 'distill_alpha', 1.0)
+                    epochs_since_start = epoch - distill_start_epoch
+                    ramp_epochs = max(1, config.nepochs - distill_start_epoch)
+                    alpha = distill_alpha * min(1.0, (epochs_since_start / ramp_epochs) * 2)
+
+                    loss = loss_ce + alpha * loss_distill
+                else:
+                    # Standard training without mask distillation
+                    out = model(imgs, modal_xs)
+                    loss = criterion(out, gts.long())
 
                 if engine.distributed:
                     reduce_loss = all_reduce_tensor(loss, world_size=engine.world_size)
