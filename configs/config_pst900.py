@@ -68,6 +68,18 @@ C.fix_bias = True
 C.bn_eps = 1e-3
 C.bn_momentum = 0.1
 
+"""Mask Distillation Config"""
+# PST900: high baseline (86.9%), limited training data (597 imgs), large resolution (720x1280),
+# 5 well-balanced classes with no extreme cross-modal dependency.
+# Use gentler settings to avoid disrupting well-established features.
+C.mask_prob = 0.15         # 15% mask ratio - gentle masking for high-baseline dataset
+C.mask_patch_size = 64     # larger patch to avoid fragmented masking on high-res images
+C.mask_complementary = False  # same-location masks: both modalities mask the same region
+C.distill_temperature = 4.0  # higher temperature for smoother soft labels (less overconfident teacher)
+C.distill_alpha = 0.3      # lower distillation weight since teacher reliability is lower
+C.distill_start_epoch = 200  # delay start: let model stabilize before introducing distillation
+C.mask_apply_prob = 0.3    # only 30% of iterations use mask distillation for more stable training
+
 """Eval Config"""
 # C.eval_iter = 1
 C.eval_stride_rate = 2 / 3

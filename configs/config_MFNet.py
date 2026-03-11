@@ -68,6 +68,18 @@ C.fix_bias = True
 C.bn_eps = 1e-3
 C.bn_momentum = 0.1
 
+"""Mask Distillation Config"""
+# MFNet: large improvement space (baseline 58.4%), sufficient training data (1176 imgs),
+# small resolution (480x640), many hard classes that benefit from cross-modal complementary learning.
+# Keep the original effective settings.
+C.mask_prob = 0.5          # 50% mask ratio - aggressive masking works well here
+C.mask_patch_size = 32     # patch size for block masking
+C.mask_complementary = True  # complementary masks: RGB gets mask, thermal gets (1-mask)
+C.distill_temperature = 2.0  # KL distillation temperature
+C.distill_alpha = 1.0      # distillation loss weight
+C.distill_start_epoch = 0  # start distillation from the beginning
+C.mask_apply_prob = 1.0    # apply mask distillation every iteration
+
 """Eval Config"""
 # C.eval_iter = 1
 C.eval_stride_rate = 2 / 3
