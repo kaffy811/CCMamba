@@ -218,8 +218,12 @@ def main():
                     T = getattr(config, 'distill_temperature', 2.0)
                     prob_clean = F.softmax(clean_logits / T, dim=1)
                     log_prob_masked = F.log_softmax(masked_logits / T, dim=1)
-                    # Standard KL divergence distillation loss scaled by T^2
-                    loss_distill = F.kl_div(log_prob_masked, prob_clean, reduction='batchmean') * (T * T)
+                    # KL divergence distillation loss scaled by T^2.
+                    # Use reduction='none' then .mean() to normalise over all dimensions
+                    # (B×C×H×W), keeping the loss magnitude comparable to CE loss.
+                    # 'batchmean' only divides by B, making it ~H*W times larger and
+                    # causing gradient explosion for dense-prediction tasks.
+                    loss_distill = F.kl_div(log_prob_masked, prob_clean, reduction='none').mean() * (T * T)
 
                     # Progressively increase distillation weight from 0 to distill_alpha.
                     # ramp_epochs covers the period from distill_start_epoch to nepochs.
@@ -231,7 +235,15 @@ def main():
                     ramp_epochs = max(1, config.nepochs - distill_start_epoch)
                     alpha = distill_alpha * min(1.0, (epochs_since_start / ramp_epochs) * 2)
 
-                    loss = loss_ce + alpha * loss_distill
+                    # Anomaly guard: if distillation loss is unexpectedly large
+                    # (more than distill_anomaly_threshold× the CE loss), skip it and
+                    # fall back to CE-only training to prevent a single bad step from
+                    # destroying weights.
+                    anomaly_threshold = getattr(config, 'distill_anomaly_threshold', 10.0)
+                    if loss_distill.item() > anomaly_threshold * loss_ce.item():
+                        loss = loss_ce
+                    else:
+                        loss = loss_ce + alpha * loss_distill
                 else:
                     # Standard training without mask distillation
                     out = model(imgs, modal_xs)
@@ -242,6 +254,8 @@ def main():
                 
                 optimizer.zero_grad()
                 loss.backward()
+                grad_clip_norm = getattr(config, 'grad_clip_max_norm', 1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
                 optimizer.step()
 
                 current_idx = (epoch- 1) * config.niters_per_epoch + idx 
