@@ -1,5 +1,4 @@
 import os
-from pickletools import uint8
 import cv2
 import torch
 import numpy as np
@@ -37,21 +36,20 @@ class RGBXDataset(data.Dataset):
         else:
             item_name = self._file_names[index]
             
-        # ==================== 新增：动态路径匹配逻辑 ====================
+        # ==================== 物理文件夹动态路由 ====================
         if 'FMB' in self._rgb_path:
-            # 针对 FMB 数据集，自动拼接到 train 或 test 的特定子文件夹中
+            # 根据传进来的 split_name ('train' 或 'val') 自动找对应的子目录
             split_dir = 'train' if self._split_name == 'train' else 'test'
             rgb_path = os.path.join(self._rgb_path, split_dir, 'Visible', item_name + self._rgb_format)
             x_path = os.path.join(self._x_path, split_dir, 'Infrared', item_name + self._x_format)
             gt_path = os.path.join(self._gt_path, split_dir, 'Label', item_name + self._gt_format)
         else:
-            # 兼容其他数据集（如 PST900），保持原样直接在根目录寻找
+            # 兼容其他数据集（如 MFNet）
             rgb_path = os.path.join(self._rgb_path, item_name + self._rgb_format)
             x_path = os.path.join(self._x_path, item_name + self._x_format)
             gt_path = os.path.join(self._gt_path, item_name + self._gt_format)
-        # ================================================================
+        # ==========================================================
 
-        # Check the following settings if necessary
         rgb = self._open_image(rgb_path, cv2.COLOR_BGR2RGB)
 
         gt = self._open_image(gt_path, cv2.IMREAD_GRAYSCALE, dtype=np.uint8)
@@ -77,7 +75,6 @@ class RGBXDataset(data.Dataset):
         return output_dict
 
     def _get_file_names(self, split_name):
-        # 增加 'test' 以防止 eval.py 传递 'test' 参数时报错
         assert split_name in ['train', 'val', 'test']
         source = self._train_source
         if split_name in ["val", "test"]:
@@ -85,26 +82,23 @@ class RGBXDataset(data.Dataset):
 
         file_names = []
         
-        # ==================== 新增：自动扫描文件夹逻辑 ====================
+        # ==================== 物理扫描逻辑 ====================
         if os.path.isdir(source):
-            # 如果传入的是个文件夹（比如 FMB 传的 Visible 目录），直接扫描里面所有的图片
+            # 如果配置里传的是文件夹路径，直接扫描提取文件名
             files = os.listdir(source)
             for item in files:
                 if item.endswith(self._rgb_format):
-                    # 剥离后缀，提取纯文件名 (如 2007_000032)
                     file_names.append(os.path.splitext(item)[0])
-            file_names.sort()  # 排序以保证 RGB 和 Thermal 是严格对应的
-            
+            file_names.sort() 
         elif source.endswith('.txt'):
-            # 兼容旧逻辑：如果传进来的是 .txt 文件，还是按行读取
             with open(source) as f:
                 files = f.readlines()
             for item in files:
                 file_name = item.strip()
                 file_names.append(file_name)
         else:
-            raise ValueError(f"Invalid source (not a directory or .txt file): {source}")
-        # ================================================================
+            raise ValueError(f"Invalid source: {source}")
+        # ====================================================
 
         return file_names
 
@@ -135,7 +129,6 @@ class RGBXDataset(data.Dataset):
     @classmethod
     def get_class_colors(*args):
         def uint82bin(n, count=8):
-            """returns the binary of integer n, count refers to amount of bits"""
             return ''.join([str((n >> y) & 1) for y in range(count - 1, -1, -1)])
 
         N = 41
