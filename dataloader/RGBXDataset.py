@@ -36,9 +36,20 @@ class RGBXDataset(data.Dataset):
             item_name = self._construct_new_file_names(self._file_length)[index]
         else:
             item_name = self._file_names[index]
-        rgb_path = os.path.join(self._rgb_path, item_name + self._rgb_format)
-        x_path = os.path.join(self._x_path, item_name + self._x_format)
-        gt_path = os.path.join(self._gt_path, item_name + self._gt_format)
+            
+        # ==================== 新增：动态路径匹配逻辑 ====================
+        if 'FMB' in self._rgb_path:
+            # 针对 FMB 数据集，自动拼接到 train 或 test 的特定子文件夹中
+            split_dir = 'train' if self._split_name == 'train' else 'test'
+            rgb_path = os.path.join(self._rgb_path, split_dir, 'Visible', item_name + self._rgb_format)
+            x_path = os.path.join(self._x_path, split_dir, 'Infrared', item_name + self._x_format)
+            gt_path = os.path.join(self._gt_path, split_dir, 'Label', item_name + self._gt_format)
+        else:
+            # 兼容其他数据集（如 PST900），保持原样直接在根目录寻找
+            rgb_path = os.path.join(self._rgb_path, item_name + self._rgb_format)
+            x_path = os.path.join(self._x_path, item_name + self._x_format)
+            gt_path = os.path.join(self._gt_path, item_name + self._gt_format)
+        # ================================================================
 
         # Check the following settings if necessary
         rgb = self._open_image(rgb_path, cv2.COLOR_BGR2RGB)
@@ -66,18 +77,34 @@ class RGBXDataset(data.Dataset):
         return output_dict
 
     def _get_file_names(self, split_name):
-        assert split_name in ['train', 'val']
+        # 增加 'test' 以防止 eval.py 传递 'test' 参数时报错
+        assert split_name in ['train', 'val', 'test']
         source = self._train_source
-        if split_name == "val":
+        if split_name in ["val", "test"]:
             source = self._eval_source
 
         file_names = []
-        with open(source) as f:
-            files = f.readlines()
-
-        for item in files:
-            file_name = item.strip()
-            file_names.append(file_name)
+        
+        # ==================== 新增：自动扫描文件夹逻辑 ====================
+        if os.path.isdir(source):
+            # 如果传入的是个文件夹（比如 FMB 传的 Visible 目录），直接扫描里面所有的图片
+            files = os.listdir(source)
+            for item in files:
+                if item.endswith(self._rgb_format):
+                    # 剥离后缀，提取纯文件名 (如 2007_000032)
+                    file_names.append(os.path.splitext(item)[0])
+            file_names.sort()  # 排序以保证 RGB 和 Thermal 是严格对应的
+            
+        elif source.endswith('.txt'):
+            # 兼容旧逻辑：如果传进来的是 .txt 文件，还是按行读取
+            with open(source) as f:
+                files = f.readlines()
+            for item in files:
+                file_name = item.strip()
+                file_names.append(file_name)
+        else:
+            raise ValueError(f"Invalid source (not a directory or .txt file): {source}")
+        # ================================================================
 
         return file_names
 

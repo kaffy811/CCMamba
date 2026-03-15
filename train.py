@@ -52,8 +52,9 @@ def main():
             from configs.config_nyu import config
         elif dataset_name == 'sun':
             from configs.config_sunrgbd import config
+
         elif dataset_name == 'fmb':
-            from configs.config_FMB import config
+            from configs.config_fmb import config
         else:
             raise ValueError('Not a valid dataset name')
 

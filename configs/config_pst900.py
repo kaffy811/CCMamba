@@ -40,8 +40,8 @@ C.class_names =  ['Background', 'Extinguisher', 'Backpack', 'Hand-Drill', 'Survi
 
 """Image Config"""
 C.background = 255
-C.image_height = 720
-C.image_width = 1280
+C.image_height = 480
+C.image_width = 640
 C.norm_mean = np.array([0.485, 0.456, 0.406])
 C.norm_std = np.array([0.229, 0.224, 0.225])
 
@@ -57,7 +57,7 @@ C.lr = 6e-5
 C.lr_power = 0.9
 C.momentum = 0.9
 C.weight_decay = 0.01
-C.batch_size = 8
+C.batch_size = 2
 C.nepochs = 500
 C.niters_per_epoch = C.num_train_imgs // C.batch_size  + 1
 C.num_workers = 16
@@ -85,7 +85,7 @@ C.mask_apply_prob = 0.3    # only 30% of iterations use mask distillation for mo
 C.eval_stride_rate = 2 / 3
 C.eval_scale_array = [1] # [0.75, 1, 1.25] # 
 C.eval_flip = False # True # 
-C.eval_crop_size = [720, 1280] # [height weight]
+C.eval_crop_size = [480, 640] # [height weight]
 
 """Store Config"""
 C.checkpoint_start_epoch = 50
