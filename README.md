@@ -92,11 +92,8 @@ pip install -r requirements.txt
 
 本仓库支持以下数据集名称（由训练/评估脚本解析）：
 
-- `mfnet`
-- `pst`
-- `nyu`
-- `sun`
-- `fmb`
+- 'mfnet'：https://www.mi.t.u-tokyo.ac.jp/static/projects/mil_multispectral/
+- 'fmb'：https://drive.google.com/drive/folders/1T_jVi80tjgyHTQDpn-TjfySyW4CK1LlF
 
 ### 5.1 下载数据集
 
